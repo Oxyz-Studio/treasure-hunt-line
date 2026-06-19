@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Treasure Hunt Line</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 20px; text-align: center; }
+    h1 { font-size: 2rem; margin-bottom: 4px; }
+    p.tag { color: #888; margin-top: 0; }
+    ol { text-align: left; line-height: 1.6; background: rgba(127,127,127,.08); padding: 16px 16px 16px 36px; border-radius: 12px; }
+    button { font-size: 1.15rem; padding: 14px 28px; border-radius: 999px; border: 0; cursor: pointer; background: #6c4cf1; color: #fff; }
+    button:disabled { opacity: .5; cursor: default; }
+    #status { color: #777; margin-top: 14px; min-height: 1.4em; }
+    #img { max-width: 100%; margin-top: 20px; border-radius: 14px; display: none; box-shadow: 0 8px 30px rgba(0,0,0,.18); }
+  </style>
+</head>
+<body>
+  <h1>🗺️ Treasure Hunt Line</h1>
+  <p class="tag">An AI host gives you riddles for real places near you.</p>
+  <ol>
+    <li>Tap call and tell Riley where you are.</li>
+    <li>Get a riddle, hang up, go find the landmark.</li>
+    <li>Call back — Riley remembers your game.</li>
+  </ol>
+  <button id="call">📞 Start call</button>
+  <div id="status"></div>
+  <img id="img" alt="hint" />
+
+  <script type="module">
+    import Vapi from "https://esm.sh/@vapi-ai/web@latest";
+    const PUBLIC_KEY = "01a2c7bc-87f4-4283-8400-e5cd9e04a1d8";
+    const ASSISTANT_ID = "fa32d209-ce6e-42c0-9fb4-8da7f2b75ab5";
+    const FUNCTION_URL = "https://26drdq7n.function2.insforge.app/treasure-hunt";
+
+    const playerId = localStorage.playerId ?? (localStorage.playerId = crypto.randomUUID());
+    const vapi = new Vapi(PUBLIC_KEY);
+    const $ = (id) => document.getElementById(id);
+    let pollTimer = null, inCall = false;
+
+    async function getState() {
+      try { return await (await fetch(`${FUNCTION_URL}?playerId=${playerId}`)).json(); }
+      catch { return { has_active_clue: false, hint_image_url: null }; }
+    }
+    function startPolling() {
+      $("img").style.display = "none";
+      pollTimer = setInterval(async () => {
+        const s = await getState();
+        if (s.hint_image_url) { $("img").src = s.hint_image_url; $("img").style.display = "block"; }
+      }, 2000);
+    }
+    function stopPolling() { if (pollTimer) clearInterval(pollTimer); pollTimer = null; }
+
+    vapi.on("call-start", () => { inCall = true; $("call").textContent = "🔴 End call"; $("call").disabled = false; $("status").textContent = "Connected — talk to Riley"; startPolling(); });
+    vapi.on("call-end", () => { inCall = false; $("call").textContent = "📞 Start call"; $("call").disabled = false; $("status").textContent = "Call ended"; stopPolling(); });
+    vapi.on("error", (e) => { $("status").textContent = "Error: " + (e?.message ?? JSON.stringify(e)); $("call").disabled = false; });
+
+    $("call").onclick = async () => {
+      if (inCall) { vapi.stop(); return; }
+      $("call").disabled = true;
+      $("status").textContent = "Connecting…";
+      const s = await getState();
+      const playerStatus = s.has_active_clue ? "returning" : "new";
+      try {
+        await vapi.start(ASSISTANT_ID, { variableValues: { playerId, playerStatus } });
+      } catch (e) {
+        $("status").textContent = "Could not start: " + (e?.message ?? e);
+        $("call").disabled = false;
+      }
+    };
+  </script>
+</body>
+</html>
