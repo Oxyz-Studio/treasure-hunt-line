@@ -97,7 +97,8 @@ async function getHint(db: any, playerId: string, type: string): Promise<string>
 // Deterministic public URL + HEAD check; fall back to the generic image if absent.
 async function imageFor(_db: any, osmId: string): Promise<string> {
   const key = osmId.replace("/", "_") + ".jpg";
-  const url = `${Deno.env.get("INSFORGE_BASE_URL")}/storage/v1/object/public/hint-images/${key}`;
+  const base = (Deno.env.get("INSFORGE_BASE_URL") ?? "").replace(/\/$/, "");
+  const url = `${base}/api/storage/buckets/hint-images/objects/${key}`;
   try {
     const head = await fetch(url, { method: "HEAD" });
     if (head.ok) return url;
