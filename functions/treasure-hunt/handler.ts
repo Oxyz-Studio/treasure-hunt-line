@@ -93,22 +93,40 @@ async function getHint(db: any, playerId: string, type: string): Promise<string>
   if (!clue) return "NO_ACTIVE_CLUE";
   await db.from("clues").update({ hints_used: clue.hints_used + 1 }).eq("id", clue.id);
   if (type === "image") {
-    const url = await imageFor(db, clue.landmark_osm_id);
+    const url = await imageFor(clue);
     await db.from("clues").update({ hint_image_url: url }).eq("id", clue.id);
     return "IMAGE_SHOWN";
   }
   return await simplifyHint(NEBIUS(), clue.riddle, clue.landmark_name);
 }
 
-// pre-generated image mapping (uploaded later). key = sanitized osmId.
-// Deterministic public URL + HEAD check; fall back to the generic image if absent.
-async function imageFor(_db: any, osmId: string): Promise<string> {
-  const key = osmId.replace("/", "_") + ".jpg";
-  const base = (Deno.env.get("INSFORGE_BASE_URL") ?? "").replace(/\/$/, "");
-  const url = `${base}/api/storage/buckets/hint-images/objects/${key}`;
+// Real landmark photo as a hint: reverse-geocode the landmark's OWN coords to a city,
+// then Wikipedia-search "<landmark> <city>" for its page thumbnail. (Using the origin
+// text instead would surface the origin place, not the target.) Falls back to generic.
+async function imageFor(clue: any): Promise<string> {
+  const UA = "MidsummerTreasureHunt/1.0 (hackathon demo)";
+  let city = "";
   try {
-    const head = await fetch(url, { method: "HEAD" });
-    if (head.ok) return url;
+    const r = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&zoom=10&lat=${clue.landmark_lat}&lon=${clue.landmark_lng}`,
+      { headers: { "User-Agent": UA } },
+    );
+    if (r.ok) {
+      const a = (await r.json())?.address ?? {};
+      city = a.city || a.town || a.village || a.county || "";
+    }
+  } catch { /* city stays empty */ }
+  const query = `${clue.landmark_name} ${city}`.trim();
+  try {
+    const u = `https://en.wikipedia.org/w/api.php?action=query&format=json&generator=search` +
+      `&gsrsearch=${encodeURIComponent(query)}&gsrlimit=1&prop=pageimages&piprop=thumbnail&pithumbsize=600`;
+    const res = await fetch(u, { headers: { "User-Agent": UA } });
+    if (res.ok) {
+      const pages = (await res.json())?.query?.pages ?? {};
+      for (const p of Object.values(pages) as any[]) {
+        if (p?.thumbnail?.source) return p.thumbnail.source as string;
+      }
+    }
   } catch { /* fall through to generic */ }
   return GENERIC_HINT_IMG;
 }
