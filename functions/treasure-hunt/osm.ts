@@ -43,14 +43,33 @@ export function selectLandmark(
   return { osmId: p.osmId, name: p.name, lat: p.lat, lng: p.lng, desc: p.desc };
 }
 
-// Network: geocode a free-text location to {lat,lng}. Returns null if not found.
-export async function geocode(location: string): Promise<{ lat: number; lng: number } | null> {
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(location)}`;
+// Strip conversational filler so spoken phrases ("I'm by Oracle Park",
+// "near the ferry building in SF") geocode as well as a clean address or place name.
+const FILLER =
+  /\b(i'?m|i am|i|am|currently|right|now|standing|located|here|near|nearby|by|next|close|around|over|at|in|front|of|the corner)\b/gi;
+export function cleanLocation(s: string): string {
+  return s.toLowerCase().replace(FILLER, " ").replace(/\s+/g, " ").trim();
+}
+
+async function geocodeOne(q: string): Promise<{ lat: number; lng: number } | null> {
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`;
   const res = await fetch(url, { headers: { "User-Agent": UA } });
   if (!res.ok) return null;
   const arr = await res.json();
   if (!Array.isArray(arr) || arr.length === 0) return null;
   return { lat: parseFloat(arr[0].lat), lng: parseFloat(arr[0].lon) };
+}
+
+// Network: geocode a free-text location (address OR landmark/place name OR spoken phrase).
+// Tries the raw query first, then a filler-stripped version. Returns null if not found.
+export async function geocode(location: string): Promise<{ lat: number; lng: number } | null> {
+  const cleaned = cleanLocation(location);
+  const tries = cleaned && cleaned !== location.toLowerCase().trim() ? [location, cleaned] : [location];
+  for (const q of tries) {
+    const hit = await geocodeOne(q);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 // Network: fetch named POIs within `radius` meters, pick a landmark.
