@@ -1,0 +1,20 @@
+
+# Secrets — MCP config holds the Vapi API key in plaintext
+.mcp.json
+.env
+.env.local
+
+# InsForge & AI agent skills
+.insforge
+.agent
+.agents
+.augment
+.claude
+.cline
+.github/copilot*
+.kilocode
+.qoder
+.qwen
+.roo
+.trae
+.windsurf
