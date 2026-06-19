@@ -31,8 +31,6 @@ async function activeClue(db: any, playerId: string) {
 async function setupClue(db: any, playerId: string, location: string): Promise<string> {
   const { data: existing } = await db.from("players").select("id").eq("id", playerId).limit(1);
   if (!existing?.[0]) await db.from("players").insert([{ id: playerId }]);
-  // abandon any lingering active clue so the unique active-clue index won't reject the insert
-  await db.from("clues").update({ status: "abandoned" }).eq("player_id", playerId).eq("status", "active");
   const geo = await geocode(location);
   if (!geo) return "I couldn't place that location. Give me a street, building, or intersection.";
   const { data: prev } = await db.from("clues").select("landmark_osm_id").eq("player_id", playerId);
@@ -41,6 +39,8 @@ async function setupClue(db: any, playerId: string, location: string): Promise<s
   if (!lm) lm = await findLandmark(geo.lat, geo.lng, seen, 2400);
   if (!lm) return "I couldn't find a good landmark near there. Try telling me a different spot.";
   const riddle = await generateRiddle(NEBIUS(), lm.name, lm.desc);
+  // abandon any lingering active clue so the unique active-clue index won't reject the insert
+  await db.from("clues").update({ status: "abandoned" }).eq("player_id", playerId).eq("status", "active");
   await db.from("clues").insert([{
     player_id: playerId, origin_location: location, origin_lat: geo.lat, origin_lng: geo.lng,
     landmark_name: lm.name, landmark_lat: lm.lat, landmark_lng: lm.lng,
@@ -133,16 +133,21 @@ export default async function (req: Request): Promise<Response> {
   const body = await req.json();
   const tc = body?.message?.toolCalls?.[0];
   const playerId = body?.message?.call?.assistantOverrides?.variableValues?.playerId;
-  if (!tc || !playerId) return json({ error: "missing toolCall or playerId" }, 400);
-  const args = typeof tc.function.arguments === "string"
-    ? JSON.parse(tc.function.arguments) : tc.function.arguments;
+  if (!tc?.function?.name || !playerId) return json({ error: "missing toolCall or playerId" }, 400);
 
   let result: string;
-  switch (tc.function.name) {
-    case "setup_clue":   result = await setupClue(db, playerId, args.location); break;
-    case "check_answer": result = await checkAnswer(db, playerId, args.guess); break;
-    case "get_hint":     result = await getHint(db, playerId, args.type ?? "verbal"); break;
-    default:             result = `Unknown tool ${tc.function.name}`;
+  try {
+    const args = typeof tc.function.arguments === "string"
+      ? JSON.parse(tc.function.arguments) : (tc.function.arguments ?? {});
+    switch (tc.function.name) {
+      case "setup_clue":   result = await setupClue(db, playerId, args.location); break;
+      case "check_answer": result = await checkAnswer(db, playerId, args.guess); break;
+      case "get_hint":     result = await getHint(db, playerId, args.type ?? "verbal"); break;
+      default:             result = `Unknown tool ${tc.function.name}`;
+    }
+  } catch (e) {
+    console.error("tool error", e);
+    result = "Something went wrong on my end — give me a moment and try that again.";
   }
   return json({ results: [{ toolCallId: tc.id, result }] });
 }
