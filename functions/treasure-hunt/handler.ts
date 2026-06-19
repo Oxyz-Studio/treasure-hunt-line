@@ -27,6 +27,14 @@ function admin() {
 const NEBIUS = () => Deno.env.get("NEBIUS_API_KEY")!;
 const GENERIC_HINT_IMG = Deno.env.get("GENERIC_HINT_IMAGE_URL") ?? "";
 
+// Deterministically map a phone number to a UUID-shaped id so phone callers
+// persist across calls using the same `players`/`clues` schema as web players.
+async function phoneToId(phone: string): Promise<string> {
+  const buf = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode("th:" + phone)));
+  const h = [...buf].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 32);
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+}
+
 async function activeClue(db: any, playerId: string) {
   const { data } = await db.from("clues")
     .select("*").eq("player_id", playerId).eq("status", "active")
@@ -158,7 +166,12 @@ export default async function (req: Request): Promise<Response> {
   // Vapi POST → route by tool name
   const body = await req.json();
   const tc = body?.message?.toolCalls?.[0];
-  const playerId = body?.message?.call?.assistantOverrides?.variableValues?.playerId;
+  const call = body?.message?.call;
+  // Web call: playerId comes from the browser (localStorage UUID).
+  // Phone call: no browser, so derive a stable id from the caller's phone number.
+  const phone = call?.customer?.number ?? body?.message?.customer?.number;
+  const playerId = call?.assistantOverrides?.variableValues?.playerId
+    ?? (phone ? await phoneToId(phone) : undefined);
   if (!tc?.function?.name || !playerId) return json({ error: "missing toolCall or playerId" }, 400);
 
   let result: string;
