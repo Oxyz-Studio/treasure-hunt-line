@@ -11,11 +11,18 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
+// Surface SDK write errors (which are returned, not thrown) so the POST try/catch logs them.
+function chk(res: { error?: unknown }, ctx: string) {
+  if (res?.error) throw new Error(`${ctx}: ${JSON.stringify(res.error)}`);
+  return res;
+}
+
+// Returns the admin (service-role) database handle; bypasses RLS.
 function admin() {
   return createAdminClient({
     baseUrl: Deno.env.get("INSFORGE_BASE_URL"),
     apiKey: Deno.env.get("INSFORGE_API_KEY")!,
-  });
+  }).database;
 }
 const NEBIUS = () => Deno.env.get("NEBIUS_API_KEY")!;
 const GENERIC_HINT_IMG = Deno.env.get("GENERIC_HINT_IMAGE_URL") ?? "";
@@ -30,7 +37,7 @@ async function activeClue(db: any, playerId: string) {
 // ---- tool: setup_clue ----
 async function setupClue(db: any, playerId: string, location: string): Promise<string> {
   const { data: existing } = await db.from("players").select("id").eq("id", playerId).limit(1);
-  if (!existing?.[0]) await db.from("players").insert([{ id: playerId }]);
+  if (!existing?.[0]) chk(await db.from("players").insert([{ id: playerId }]), "players.insert");
   const geo = await geocode(location);
   if (!geo) return "I couldn't place that location. Give me a street, building, or intersection.";
   const { data: prev } = await db.from("clues").select("landmark_osm_id").eq("player_id", playerId);
