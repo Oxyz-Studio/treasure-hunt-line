@@ -1,16 +1,39 @@
 # 🗺️ Treasure Hunt Line
 
+> An AI host gives you spoken riddles for real places near you — call, walk, call back.
+
 An AI-hosted, phone-style scavenger hunt. You call a voice assistant, tell it where you
 are, and it gives you a **riddle for a real landmark within ~1 mile** — without naming it.
 You hang up, walk to your guess, and call back. Correct answers unlock the next clue near
 your new location; wrong ones earn hints (spoken, or an image on your screen). Players are
 scored and ranked on time, clues solved, and hints used.
 
-> **Why this can't be a normal chatbot:** it needs a real (phone-style) call, **persistent
-> state tied to a player across separate calls over time**, **location-aware dynamic clue
-> generation**, and the ability to push an image mid-game. That combination is the whole point.
-
 **Live demo:** https://26drdq7n.insforge.site
+
+> Built at a hackathon as a live, on-stage web-call proof-of-concept. The core loop runs
+> end-to-end in a few minutes from a single browser tab — reliability over breadth.
+
+## The problem it solves
+
+A treasure hunt that adapts to *wherever you actually are* normally needs a human host:
+someone who knows the neighborhood, invents a clue on the spot, judges your fuzzy guess,
+and remembers where you left off between legs. Treasure Hunt Line replaces that host with
+a voice AI — so the game works in any city, for any starting point, with no pre-authored map.
+
+> **Why this can't be a normal chatbot:** it needs a real (phone-style) voice call, **persistent
+> state tied to a player across separate calls over time**, **location-aware dynamic clue
+> generation** from live map data, and the ability to push an image mid-game. That combination
+> is the whole point.
+
+## Features
+
+- **Voice-first play** — the whole game is a phone-style conversation with an AI host ("Riley"); no typing.
+- **Real, nearby landmarks** — clues point to actual OpenStreetMap POIs within ~1 mile of where you say you are.
+- **AI-generated riddles** — each clue is a fresh riddle that describes the landmark without ever naming it.
+- **Memory across calls** — hang up, walk, call back, and the game remembers your player, progress, and current clue.
+- **Fuzzy answer matching** — descriptive guesses like *"the big clock tower"* count as correct.
+- **Spoken or visual hints** — ask for a simpler verbal hint, or have an image pushed to your screen mid-call.
+- **Scoring & leaderboard** — players are ranked on clues solved, hints used, and time taken.
 
 ---
 
@@ -29,7 +52,9 @@ InsForge edge function  "treasure-hunt"  (Deno)            │  polls get_state
    └─ InsForge Postgres: players + clues (state, scoring)  ◄┘
 ```
 
-Three platforms, each doing what it's best at:
+## Tech stack
+
+Four platforms, each doing what it's best at, plus a thin Deno edge function as the glue:
 
 | Platform | Role |
 | --- | --- |
@@ -37,6 +62,9 @@ Three platforms, each doing what it's best at:
 | **[InsForge](https://insforge.dev)** | Postgres state (player progress, clues, scores), the edge function (game brain), storage (hint images), and the static frontend hosting. |
 | **[Nebius AI Studio](https://studio.nebius.com)** | All generative inference (OpenAI-compatible): riddle generation, verbal-hint rephrasing, and semantic fuzzy answer-matching. |
 | **[OpenStreetMap](https://www.openstreetmap.org)** | Free geocoding (Nominatim) + nearby landmark lookup (Overpass) — no API key needed. |
+
+The game logic itself is a single **[Deno](https://deno.com)** edge function (TypeScript), with
+pure helpers unit-tested via `deno test`; the frontend is one static HTML page using the Vapi Web SDK.
 
 ### The conversation loop
 
